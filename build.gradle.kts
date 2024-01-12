@@ -21,11 +21,6 @@ allprojects {
 
     repositories {
         mavenCentral()
-        maven("https://maven.lenni0451.net/releases") {
-            content {
-                includeGroup("net.raphimc.javadowngrader")
-            }
-        }
     }
 
     java {
