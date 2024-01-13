@@ -205,14 +205,16 @@ import java.util.jar.Manifest;
         }
       }
 
-      Class<?> clazz = null;
-      if (loadConfig.policy().selfFirst()) {
+      Class<?> clazz = findLoadedClass(name);
+
+      if (clazz == null && loadConfig.policy().selfFirst()) {
         try {
           clazz = findClass0(loadConfig, name);
         } catch (final ClassNotFoundException e) {
           //
         }
       }
+
       if (clazz == null && loadConfig.policy().parentSecond()) {
         try {
           clazz = parent().loadClass(name);
@@ -220,6 +222,7 @@ import java.util.jar.Manifest;
           //
         }
       }
+
       if (clazz == null && loadConfig.policy().selfThird()) {
         try {
           clazz = findClass0(loadConfig, name);
@@ -227,6 +230,7 @@ import java.util.jar.Manifest;
           //
         }
       }
+
       if (clazz == null) {
         throw new ClassNotFoundException(name);
       } else {
