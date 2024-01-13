@@ -17,19 +17,7 @@ public class HcLoaderGradlePlugin implements Plugin<Project> {
     final Configuration shadowRuntimeConfiguration = project.getConfigurations().create("shadowRuntime");
     final Configuration embeddedRuntimeConfiguration = project.getConfigurations().create("embeddedRuntime");
 
-    final TaskProvider<Jar> jarTask = project.getTasks().named("jar", Jar.class);
-
     final HcLoaderJarTask hcLoaderJarTask = project.getTasks().create("hcLoaderJar", HcLoaderJarTask.class);
-    hcLoaderJarTask.dependsOn(jarTask);
-    hcLoaderJarTask.with(project.copySpec(copySpec -> {
-      copySpec.from(jarTask.map(jar -> jar.getOutputs()
-          .getFiles()
-          .getFiles()
-          .stream()
-          .map(it -> it.isFile() ? project.zipTree(it) : it)
-          .collect(Collectors.toSet())));
-      copySpec.exclude("META-INF/MANIFEST.MF");
-    }));
     hcLoaderJarTask.with(project.copySpec(copySpec -> {
       copySpec.from(delegateRuntimeConfiguration);
       copySpec.into("META-INF/hcloader/delegate");

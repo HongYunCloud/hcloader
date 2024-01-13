@@ -214,7 +214,7 @@ public class HcLoaderCopyAction implements CopyAction {
     }
 
     public void collect() throws IOException {
-      if(!visitedTarget) {
+      if(enableStaticInject && !visitedTarget) {
         ClassNode classNode = new ClassNode(Opcodes.ASM9);
         classNode.version = Opcodes.V1_8;
         classNode.access = Opcodes.ACC_PUBLIC;
@@ -226,7 +226,7 @@ public class HcLoaderCopyAction implements CopyAction {
         archiveEntry.setTime(preserveFileTimestamps ? System.currentTimeMillis() : CONSTANT_TIME_FOR_ZIP_ENTRIES);
         archiveEntry.setUnixMode(UnixStat.FILE_FLAG);
         zipOutStr.putArchiveEntry(archiveEntry);
-        final ClassWriter classWriter = new ClassWriter(0);
+        final ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
         classNode.accept(classWriter);
         zipOutStr.write(classWriter.toByteArray());
         zipOutStr.closeArchiveEntry();

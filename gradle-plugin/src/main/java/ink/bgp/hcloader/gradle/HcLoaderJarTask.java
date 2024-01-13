@@ -10,6 +10,7 @@ import org.gradle.api.internal.file.FileCollectionFactory;
 import org.gradle.api.internal.file.FileTreeInternal;
 import org.gradle.api.internal.file.copy.CopyAction;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.bundling.ZipEntryCompression;
@@ -28,13 +29,11 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
+import java.util.stream.Collectors;
 
 import static org.gradle.api.internal.lambdas.SerializableLambdas.action;
 
@@ -44,6 +43,8 @@ public class HcLoaderJarTask extends Jar {
   private final @NotNull Property<String> loaderPackage;
   private final @NotNull Property<Boolean> enableStaticInject;
   private final @NotNull Property<String> staticInjectClass;
+  private final @NotNull Property<Boolean> enableCopyInjector;
+  private final @NotNull Property<Boolean> enableCopyJar;
 
   private final @NotNull List<@NotNull HcLoaderConfigEntry> loadConfig = new ArrayList<>();
 
@@ -54,13 +55,17 @@ public class HcLoaderJarTask extends Jar {
         .convention(false);
     this.staticInjectClass = getObjectFactory().property(String.class)
         .convention("");
+    this.enableCopyInjector = getObjectFactory().property(Boolean.class)
+        .convention(true);
+    this.enableCopyJar = getObjectFactory().property(Boolean.class)
+        .convention(true);
 
     setEntryCompression(ZipEntryCompression.STORED);
 
     getArchiveClassifier().set("boot");
 
-    final Cached<FileTree> runtimeCache = Cached.of(this::computeCache);
-    from(getProject().provider(runtimeCache::get));
+    copyFromJar();
+    copyFromInjector();
   }
 
   @Input
@@ -81,6 +86,45 @@ public class HcLoaderJarTask extends Jar {
   @Input
   public @NotNull List<@NotNull HcLoaderConfigEntry> getLoadConfig() {
     return loadConfig;
+  }
+
+  @Input
+  public @NotNull Property<@NotNull Boolean> getEnableCopyInjector() {
+    return enableCopyInjector;
+  }
+
+  @Input
+  public @NotNull Property<@NotNull Boolean> getEnableCopyJar() {
+    return enableCopyJar;
+  }
+
+  private void copyFromJar() {
+    with(getProject().copySpec(copySpec -> {
+      copySpec.from(getProject().provider(()-> {
+        if (enableCopyJar.get()) {
+          return ((Jar) getProject().getTasks().getByName("jar")).getOutputs()
+              .getFiles()
+              .getFiles()
+              .stream()
+              .map(it -> it.isFile() ? getProject().zipTree(it) : it)
+              .collect(Collectors.toSet());
+        }else {
+          return Collections.emptySet();
+        }
+      }));
+      copySpec.exclude("META-INF/MANIFEST.MF");
+    }));
+  }
+
+  private void copyFromInjector() {
+    final Cached<FileTree> runtimeCache = Cached.of(this::computeCache);
+    from(getProject().provider(() -> {
+      if (enableCopyInjector.get()) {
+        return runtimeCache.get();
+      } else {
+        return Collections.emptySet();
+      }
+    }));
   }
 
   private @NotNull String computeLoaderPackage() {
@@ -114,7 +158,7 @@ public class HcLoaderJarTask extends Jar {
     return String.join("/", loaderPackageParts);
   }
 
-  public @NotNull FileTree computeCache() {
+  private @NotNull FileTree computeCache() {
     final FileCollectionFactory fileCollectionFactory = getServices().get(FileCollectionFactory.class);
     final OutputChangeListener outputChangeListener = getServices().get(OutputChangeListener.class);
 
