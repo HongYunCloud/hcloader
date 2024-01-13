@@ -230,7 +230,7 @@ import java.util.jar.Manifest;
       if (clazz == null) {
         throw new ClassNotFoundException(name);
       } else {
-        return super.loadClass(name, resolve);
+        return clazz;
       }
     } finally {
       Handler.setUseFastConnectionExceptions(false);
