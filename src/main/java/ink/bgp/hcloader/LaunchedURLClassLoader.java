@@ -213,14 +213,14 @@ import java.util.jar.Manifest;
           //
         }
       }
-      if (loadConfig.policy().parentSecond()) {
+      if (clazz == null && loadConfig.policy().parentSecond()) {
         try {
           clazz = parent().loadClass(name);
         } catch (final ClassNotFoundException e) {
           //
         }
       }
-      if (loadConfig.policy().selfThird()) {
+      if (clazz == null && loadConfig.policy().selfThird()) {
         try {
           clazz = findClass0(loadConfig, name);
         } catch (final ClassNotFoundException e) {
