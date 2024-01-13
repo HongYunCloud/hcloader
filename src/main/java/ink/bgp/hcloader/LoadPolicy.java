@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 /* package-private */ enum LoadPolicy {
-  PARENT_FIRST(true, true, false),
+  PARENT_FIRST(false, true, true),
   SELF_FIRST(true, true, false),
   PARENT_ONLY(false, true, false),
   SELF_ONLY(true, false, false),
