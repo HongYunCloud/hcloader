@@ -5,6 +5,7 @@ import org.jetbrains.annotations.NotNull;
 import sun.misc.Unsafe;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -14,8 +15,8 @@ import java.lang.reflect.Modifier;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Enumeration;
+import java.util.function.Consumer;
 
 public final class StaticInjector {
   private StaticInjector() {
@@ -34,49 +35,17 @@ public final class StaticInjector {
 
     final URLClassLoader targetClassLoader = (URLClassLoader) targetClass.getClassLoader();
     final File pluginFile = new File(targetClass.getProtectionDomain().getCodeSource().getLocation().getFile());
+    final JarFileArchive pluginArchive = new JarFileArchive(pluginFile);
 
-    final JarFileArchive jarFileArchive = new JarFileArchive(pluginFile);
-
-    // archive -> pluginClassLoader.addUrl(archive.getUrl())
+    final LaunchedURLClassLoader delegateClassLoader = new LaunchedURLClassLoader(pluginArchive, new URL[0], targetClassLoader);
     final MethodHandle urlClassLoaderAddUrlHandle = lookup.findVirtual(URLClassLoader.class, "addURL", MethodType.methodType(void.class, URL.class));
 
-    jarFileArchive.getNestedArchives(
-        entry -> entry.getName().startsWith("META-INF/hcloader/embedded/"),
-        entry -> entry.getName().startsWith("META-INF/hcloader/embedded/")
-    ).forEachRemaining(archive -> {
-      try {
-        urlClassLoaderAddUrlHandle.invokeExact(targetClassLoader, archive.getUrl());
-      } catch (Throwable e) {
-        throw throwImpl(e);
-      }
-    });
-
-    final List<URL> delegateUrls = new ArrayList<>();
-    jarFileArchive.getNestedArchives(
-        entry -> entry.getName().startsWith("META-INF/hcloader/delegate/"),
-        entry -> entry.getName().startsWith("META-INF/hcloader/delegate/")
-    ).forEachRemaining(it-> {
-      try {
-        delegateUrls.add(it.getUrl());
-      } catch (MalformedURLException e) {
-        throw throwImpl(e);
-      }
-    });
-
-    final LaunchedURLClassLoader delegateClassLoader = new LaunchedURLClassLoader(
-        jarFileArchive,
-        delegateUrls.toArray(new URL[0]),
-        targetClassLoader);
-
-    try(final InputStream in = targetClassLoader.getResourceAsStream("META-INF/hcloader/delegateconfig")) {
-      if (in != null) {
-        LoadConfigEntry.load(in, delegateClassLoader);
-      }
-    }
+    load(urlClassLoaderAddUrlHandle, targetClassLoader, delegateClassLoader, pluginArchive);
+    scanDelegateConfig(targetClassLoader, delegateClassLoader);
 
     for (final Field field : targetClass.getDeclaredFields()) {
       if (!Modifier.isStatic(field.getModifiers()) || !field.getName().startsWith("$hcloader$")) {
-        return;
+        continue;
       }
       final Object value;
       switch (field.getName()) {
@@ -96,6 +65,17 @@ public final class StaticInjector {
           value = field.getType().cast(pluginFile);
           break;
         }
+        case "$hcloader$addDelegateFile": {
+          value = field.getType().cast((Consumer<File>) file -> {
+            try {
+              load(urlClassLoaderAddUrlHandle, targetClassLoader, delegateClassLoader, new JarFileArchive(file));
+              scanDelegateConfig(targetClassLoader, delegateClassLoader);
+            } catch (Throwable e) {
+              throwImpl(e);
+            }
+          });
+          break;
+        }
         default: {
           continue;
         }
@@ -112,6 +92,48 @@ public final class StaticInjector {
             value);
       }
     }
+  }
+
+  private static void scanDelegateConfig(
+      final @NotNull URLClassLoader targetClassLoader,
+      final @NotNull LaunchedURLClassLoader delegateClassLoader) throws IOException {
+    final Enumeration<URL> delegateConfigUrls = targetClassLoader.findResources("META-INF/hcloader/delegateconfig");
+    while (delegateConfigUrls.hasMoreElements()) {
+      URL delegateConfigUrl = delegateConfigUrls.nextElement();
+      try (InputStream in = delegateConfigUrl.openStream()) {
+        LoadConfigEntry.load(in, delegateClassLoader);
+      }
+    }
+  }
+
+  private static void load(
+      final @NotNull MethodHandle urlClassLoaderAddUrlHandle,
+      final @NotNull URLClassLoader targetClassLoader,
+      final @NotNull LaunchedURLClassLoader launchedURLClassLoader,
+      final @NotNull JarFileArchive jarFileArchive) throws Throwable {
+    urlClassLoaderAddUrlHandle.invokeExact(targetClassLoader, jarFileArchive.getUrl());
+
+    jarFileArchive.getNestedArchives(
+        entry -> entry.getName().startsWith("META-INF/hcloader/embedded/"),
+        entry -> entry.getName().startsWith("META-INF/hcloader/embedded/")
+    ).forEachRemaining(archive -> {
+      try {
+        urlClassLoaderAddUrlHandle.invokeExact(targetClassLoader, archive.getUrl());
+      } catch (Throwable e) {
+        throw throwImpl(e);
+      }
+    });
+
+    jarFileArchive.getNestedArchives(
+        entry -> entry.getName().startsWith("META-INF/hcloader/delegate/"),
+        entry -> entry.getName().startsWith("META-INF/hcloader/delegate/")
+    ).forEachRemaining(it -> {
+      try {
+        launchedURLClassLoader.addURL(it.getUrl());
+      } catch (MalformedURLException e) {
+        throw throwImpl(e);
+      }
+    });
   }
 
   @SuppressWarnings("unchecked")
